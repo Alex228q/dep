@@ -45,7 +45,7 @@ class _InvestmentCalculatorScreenState
     'PHOR': {'name': 'Фосагро', 'lotSize': 1},
     'SNGSP': {'name': 'Сургутнефтегаз-п', 'lotSize': 10},
     'NVTK': {'name': 'Новатэк', 'lotSize': 1},
-    'ALRS': {'name': 'АЛРОСА', 'lotSize': 10},
+    'PLZL': {'name': 'Полюс', 'lotSize': 1},
   };
 
   Map<String, double?> stockPrices = {};
@@ -66,7 +66,7 @@ class _InvestmentCalculatorScreenState
     'NVTK': 0.15,
     'GMKN': 0.20,
     'PHOR': 0.20,
-    'ALRS': 0.15,
+    'PLZL': 0.15,
   };
 
   @override
@@ -96,17 +96,17 @@ class _InvestmentCalculatorScreenState
           double? lastPrice;
 
           if (ticker == "SBER") {
-            lastPrice = marketData[2][18]?.toDouble();
+            lastPrice = marketData[2][12]?.toDouble();
           } else if (ticker == "GMKN") {
-            lastPrice = marketData[0][9]?.toDouble();
+            lastPrice = marketData[2][12]?.toDouble();
           } else if (ticker == "PHOR") {
             lastPrice = marketData[1][12]?.toDouble();
           } else if (ticker == "SNGSP") {
-            lastPrice = marketData[0][18]?.toDouble();
+            lastPrice = marketData[2][12]?.toDouble();
           } else if (ticker == "NVTK") {
             lastPrice = marketData[1][12]?.toDouble();
-          } else if (ticker == "ALRS") {
-            lastPrice = marketData[2][12]?.toDouble();
+          } else if (ticker == "PLZL") {
+            lastPrice = marketData[1][12]?.toDouble();
           }
 
           setState(() {
