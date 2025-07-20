@@ -41,7 +41,7 @@ class _InvestmentCalculatorScreenState
   // Цены акций и размер лота
   final Map<String, Map<String, dynamic>> _stockInfo = {
     'SBER': {'name': 'Сбербанк', 'lotSize': 10},
-    'GMKN': {'name': 'Норникель', 'lotSize': 1},
+    'GMKN': {'name': 'Норникель', 'lotSize': 10},
     'PHOR': {'name': 'Фосагро', 'lotSize': 1},
     'SNGSP': {'name': 'Сургутнефтегаз-п', 'lotSize': 10},
     'NVTK': {'name': 'Новатэк', 'lotSize': 1},
@@ -132,7 +132,7 @@ class _InvestmentCalculatorScreenState
 
   double _findOptimalAmount(double totalAmount) {
     double step = 100; // шаг подбора
-    double maxDelta = totalAmount * 0.5; // диапазон +/-50%
+    double maxDelta = totalAmount * 0.10; // теперь диапазон +/-10%
     double bestAmount = totalAmount;
     double minDeviation = double.infinity;
 
@@ -338,6 +338,26 @@ class _InvestmentCalculatorScreenState
                   ),
                 );
               }),
+              if (_autoAdjusted)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Card(
+                    color: Colors.blue.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Text(
+                        'Для идеального баланса рекомендуется инвестировать '
+                        '${_adjustedTotalAmount.toStringAsFixed(2)} руб.',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
