@@ -132,7 +132,7 @@ class _InvestmentCalculatorScreenState
 
   double _findOptimalAmount(double totalAmount) {
     double step = 100; // шаг подбора
-    double maxDelta = totalAmount * 0.10; // теперь диапазон +/-10%
+    double maxDelta = totalAmount * 0.10; // диапазон +/-10%
     double bestAmount = totalAmount;
     double minDeviation = double.infinity;
 
@@ -140,13 +140,13 @@ class _InvestmentCalculatorScreenState
       double testAmount = totalAmount + delta;
       double stocksPart = testAmount * 0.60;
 
-      bool fits = true;
       double totalDeviation = 0;
+      bool validLots = true;
 
       for (final ticker in stocksDistribution.keys) {
         final price = stockPrices[ticker];
         if (price == null || price <= 0) {
-          fits = false;
+          validLots = false;
           break;
         }
 
@@ -155,18 +155,17 @@ class _InvestmentCalculatorScreenState
         final idealAmount = stocksPart * stocksDistribution[ticker]!;
 
         int lots = (idealAmount / minLotCost).round();
+        if (lots < 1) {
+          validLots = false;
+          break;
+        }
         double actualAmount = lots * minLotCost;
         double deviation = ((idealAmount - actualAmount) / idealAmount).abs();
 
         totalDeviation += deviation;
-
-        if (lots < 1 || deviation > 0.01) {
-          fits = false;
-          break;
-        }
       }
 
-      if (fits && totalDeviation < minDeviation) {
+      if (validLots && totalDeviation < minDeviation) {
         minDeviation = totalDeviation;
         bestAmount = testAmount;
       }
@@ -180,14 +179,10 @@ class _InvestmentCalculatorScreenState
     double totalAmount = double.tryParse(_totalAmountController.text) ?? 0;
 
     double optimizedAmount = _findOptimalAmount(totalAmount);
-    if ((optimizedAmount - totalAmount).abs() >= 1.0) {
-      _adjustedTotalAmount = optimizedAmount;
-      _autoAdjusted = true;
-      totalAmount = optimizedAmount;
-    } else {
-      _adjustedTotalAmount = totalAmount;
-      _autoAdjusted = false;
-    }
+
+    _adjustedTotalAmount = optimizedAmount;
+    _autoAdjusted = (optimizedAmount - totalAmount).abs() >= 1.0;
+    totalAmount = optimizedAmount;
 
     double stocksTotal = totalAmount * 0.60;
 
@@ -211,6 +206,8 @@ class _InvestmentCalculatorScreenState
       final idealAmount = stocksTotal * stocksDistribution[ticker]!;
 
       int lots = (idealAmount / minLotCost).round();
+      if (lots < 1) lots = 1;
+
       double actualAmount = lots * minLotCost;
 
       stockLots[ticker] = lots;
@@ -346,7 +343,7 @@ class _InvestmentCalculatorScreenState
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Text(
-                        'Для идеального баланса рекомендуется инвестировать '
+                        'Для максимально близкого к заданному баланса рекомендуется инвестировать '
                         '${_adjustedTotalAmount.toStringAsFixed(2)} руб.',
                         style: const TextStyle(
                           fontSize: 16,
