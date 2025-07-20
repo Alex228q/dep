@@ -35,19 +35,22 @@ class _InvestmentCalculatorScreenState
   final TextEditingController _totalAmountController = TextEditingController();
   bool _isLoading = false;
   String? _error;
+  double _additionalAmountNeeded = 0;
 
-  // Цены акций
-  final Map<String, String> _tickerNames = {
-    'SBER': 'Сбербанк',
-    'GMKN': 'Норникель',
-    'PHOR': 'Фосагро',
-    'SNGSP': 'Сургутнефтегаз',
-    'NVTK': 'Новатэк',
-    'ALRS': 'АЛРОСА',
+  // Цены акций и размер лота
+  final Map<String, Map<String, dynamic>> _stockInfo = {
+    'SBER': {'name': 'Сбербанк', 'lotSize': 10},
+    'GMKN': {'name': 'Норникель', 'lotSize': 1},
+    'PHOR': {'name': 'Фосагро', 'lotSize': 1},
+    'SNGSP': {'name': 'Сургутнефтегаз-п', 'lotSize': 10},
+    'NVTK': {'name': 'Новатэк', 'lotSize': 1},
+    'ALRS': {'name': 'АЛРОСА', 'lotSize': 10},
   };
 
   Map<String, double?> stockPrices = {};
-  Map<String, int?> stockQuantities = {};
+  Map<String, int> stockLots = {};
+  Map<String, double> actualAllocation = {};
+  Map<String, double> recommendedAllocation = {};
 
   // Основное распределение
   Map<String, double> allocationResults = {
@@ -66,9 +69,6 @@ class _InvestmentCalculatorScreenState
     'ALRS': 0.15,
   };
 
-  // Результаты распределения по акциям
-  Map<String, double> stocksAllocation = {};
-
   @override
   void initState() {
     super.initState();
@@ -83,7 +83,7 @@ class _InvestmentCalculatorScreenState
     });
 
     try {
-      for (final ticker in _tickerNames.keys) {
+      for (final ticker in _stockInfo.keys) {
         final url = Uri.parse(
           'https://iss.moex.com/iss/engines/stock/markets/shares/securities/$ticker.json',
         );
@@ -95,28 +95,22 @@ class _InvestmentCalculatorScreenState
 
           double? lastPrice;
 
-          // Логика извлечения цены для каждого тикера
           if (ticker == "SBER") {
-            lastPrice = marketData[2][18]?.toDouble() * 10;
+            lastPrice = marketData[2][18]?.toDouble();
           } else if (ticker == "GMKN") {
-            lastPrice = marketData[0][9]?.toDouble() * 10;
+            lastPrice = marketData[0][9]?.toDouble();
           } else if (ticker == "PHOR") {
             lastPrice = marketData[1][12]?.toDouble();
           } else if (ticker == "SNGSP") {
-            lastPrice = marketData[0][18]?.toDouble() * 10;
+            lastPrice = marketData[0][18]?.toDouble();
           } else if (ticker == "NVTK") {
             lastPrice = marketData[1][12]?.toDouble();
           } else if (ticker == "ALRS") {
-            lastPrice = marketData[2][12]?.toDouble() * 10;
+            lastPrice = marketData[2][12]?.toDouble();
           }
 
           setState(() {
             stockPrices[ticker] = lastPrice;
-            if (lastPrice != null && stocksAllocation.isNotEmpty) {
-              final allocation =
-                  stocksAllocation[_getAllocationKey(ticker)] ?? 0;
-              stockQuantities[ticker] = (allocation / lastPrice).round();
-            }
           });
         } else {
           setState(() {
@@ -136,13 +130,7 @@ class _InvestmentCalculatorScreenState
     }
   }
 
-  String _getAllocationKey(String ticker) {
-    final name = _tickerNames[ticker];
-    final percentage = (stocksDistribution[ticker]! * 100).toInt();
-    return '$name ($percentage%)';
-  }
-
-  void _calculateAllocation() {
+  void _calculateOptimalAllocation() {
     FocusScope.of(context).unfocus();
     final totalAmount = double.tryParse(_totalAmountController.text) ?? 0;
     final stocksTotal = totalAmount * 0.60;
@@ -155,21 +143,94 @@ class _InvestmentCalculatorScreenState
         'Золото (10%)': totalAmount * 0.10,
       };
 
-      // Распределение внутри акционной части
-      stocksAllocation = {};
-      stockQuantities = {};
+      // Сбрасываем предыдущие расчеты
+      stockLots = {};
+      actualAllocation = {};
+      recommendedAllocation = {};
+      _additionalAmountNeeded = 0;
 
-      stocksDistribution.forEach((ticker, percentage) {
-        final name = _tickerNames[ticker];
-        final key = '$name (${(percentage * 100).toInt()}%)';
-        final allocation = stocksTotal * percentage;
-        stocksAllocation[key] = allocation;
+      // Рассчитываем минимальное количество лотов для каждой акции
+      double remainingAmount = stocksTotal;
+      Map<String, double> tempRecommended = {};
 
-        // Рассчитываем количество акций
-        if (stockPrices[ticker] != null && stockPrices[ticker]! > 0) {
-          stockQuantities[ticker] = (allocation / stockPrices[ticker]!).round();
+      // Первый проход: распределяем по минимальным лотам
+      for (final ticker in stocksDistribution.keys) {
+        if (stockPrices[ticker] == null || stockPrices[ticker]! <= 0) continue;
+
+        final lotSize = _stockInfo[ticker]!['lotSize'];
+        final minLotCost = stockPrices[ticker]! * lotSize;
+        final idealAmount = stocksTotal * stocksDistribution[ticker]!;
+
+        // Определяем минимальное количество лотов
+        int lots = (idealAmount / minLotCost).floor();
+        if (lots < 1 && minLotCost <= remainingAmount) {
+          lots = 1; // Покупаем хотя бы 1 лот, если хватает денег
         }
-      });
+
+        if (lots > 0) {
+          stockLots[ticker] = lots;
+          final actualCost = lots * minLotCost;
+          actualAllocation[ticker] = actualCost;
+          remainingAmount -= actualCost;
+        }
+      }
+
+      // Второй проход: распределяем оставшиеся средства
+      if (remainingAmount > 0) {
+        // Сортируем акции по приоритету (где разница между идеальным и текущим распределением наибольшая)
+        final sortedTickers = stocksDistribution.keys.toList()
+          ..sort((a, b) {
+            final idealA = stocksTotal * stocksDistribution[a]!;
+            final idealB = stocksTotal * stocksDistribution[b]!;
+            final currentA = actualAllocation[a] ?? 0;
+            final currentB = actualAllocation[b] ?? 0;
+            final ratioA = (idealA - currentA) / idealA;
+            final ratioB = (idealB - currentB) / idealB;
+            return ratioB.compareTo(ratioA);
+          });
+
+        for (final ticker in sortedTickers) {
+          if (stockPrices[ticker] == null || stockPrices[ticker]! <= 0)
+            continue;
+
+          final lotSize = _stockInfo[ticker]!['lotSize'];
+          final minLotCost = stockPrices[ticker]! * lotSize;
+
+          if (remainingAmount >= minLotCost) {
+            final additionalLots = (remainingAmount / minLotCost).floor();
+            if (additionalLots > 0) {
+              stockLots[ticker] = (stockLots[ticker] ?? 0) + additionalLots;
+              final additionalCost = additionalLots * minLotCost;
+              actualAllocation[ticker] =
+                  (actualAllocation[ticker] ?? 0) + additionalCost;
+              remainingAmount -= additionalCost;
+            }
+          }
+        }
+      }
+
+      // Рассчитываем рекомендуемое распределение и недостающую сумму
+      double totalAllocated = stocksTotal - remainingAmount;
+      _additionalAmountNeeded = 0;
+
+      for (final ticker in stocksDistribution.keys) {
+        if (stockPrices[ticker] == null || stockPrices[ticker]! <= 0) continue;
+
+        final lotSize = _stockInfo[ticker]!['lotSize'];
+        final minLotCost = stockPrices[ticker]! * lotSize;
+        final idealAmount = stocksTotal * stocksDistribution[ticker]!;
+        final currentAmount = actualAllocation[ticker] ?? 0;
+
+        if (currentAmount < idealAmount) {
+          final neededLots = ((idealAmount - currentAmount) / minLotCost)
+              .ceil();
+          if (neededLots > 0) {
+            recommendedAllocation[ticker] = neededLots * minLotCost;
+            _additionalAmountNeeded +=
+                neededLots * minLotCost - (idealAmount - currentAmount);
+          }
+        }
+      }
     });
   }
 
@@ -199,7 +260,7 @@ class _InvestmentCalculatorScreenState
               ),
               const SizedBox(height: 20),
               ElevatedButton(
-                onPressed: _calculateAllocation,
+                onPressed: _calculateOptimalAllocation,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 15),
                 ),
@@ -282,105 +343,120 @@ class _InvestmentCalculatorScreenState
               ),
               const SizedBox(height: 20),
               const Text(
-                'Распределение по акциям:',
+                'Практическое распределение по акциям:',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: stocksAllocation.length,
-                itemBuilder: (context, index) {
-                  final key = stocksAllocation.keys.elementAt(index);
-                  final value = stocksAllocation[key]!;
-                  final ticker = _getTickerFromKey(key);
+              if (stockLots.isNotEmpty) ...[
+                ...stockLots.keys.map((ticker) {
+                  final name = _stockInfo[ticker]!['name'];
+                  final lotSize = _stockInfo[ticker]!['lotSize'];
+                  final price = stockPrices[ticker] ?? 0;
+                  final lots = stockLots[ticker]!;
+                  final cost = lots * price * lotSize;
+                  final idealPercentage = stocksDistribution[ticker]! * 100;
+                  final actualPercentage =
+                      (cost / allocationResults['Акции (60%)']!) * 100;
 
-                  return Dismissible(
-                    key: Key(key),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      color: Colors.red,
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 20),
-                      child: const Icon(Icons.delete, color: Colors.white),
-                    ),
-                    onDismissed: (direction) {
-                      final deletedKey = key;
-                      final deletedValue = value;
-
-                      setState(() {
-                        stocksAllocation.remove(key);
-                      });
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Акция $deletedKey удалена'),
-                          action: SnackBarAction(
-                            label: 'ОТМЕНА',
-                            textColor: Colors.white,
-                            onPressed: () {
-                              setState(() {
-                                stocksAllocation[deletedKey] = deletedValue;
-                              });
-                            },
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 5),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '$name (${idealPercentage.toStringAsFixed(0)}%)',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                '${cost.toStringAsFixed(2)} руб.',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
-                          duration: const Duration(seconds: 3),
-                        ),
-                      );
-                    },
-                    child: Card(
-                      margin: const EdgeInsets.symmetric(vertical: 5),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  key,
-                                  style: const TextStyle(
+                                  'Цена: ${price.toStringAsFixed(2)} руб. (лот: $lotSize шт.)',
+                                  style: TextStyle(color: Colors.grey[600]),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Лотов: $lots (${lots * lotSize} шт.)',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 Text(
-                                  '${value.toStringAsFixed(2)} руб.',
-                                  style: const TextStyle(
+                                  'Фактически: ${actualPercentage.toStringAsFixed(1)}%',
+                                  style: TextStyle(
+                                    color: actualPercentage >= idealPercentage
+                                        ? Colors.green
+                                        : Colors.orange,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ],
                             ),
-                            if (ticker != null && stockPrices[ticker] != null)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 8.0),
-                                child: Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Цена 1 лота: ${stockPrices[ticker]!.toStringAsFixed(2)} руб.',
-                                      style: TextStyle(color: Colors.grey[600]),
-                                    ),
-                                    if (stockQuantities[ticker] != null)
-                                      Text(
-                                        'Кол-во: ${stockQuantities[ticker]} шт.',
-                                        style: TextStyle(
-                                          color: Colors.grey[600],
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   );
-                },
-              ),
-              if (stocksAllocation.isNotEmpty)
+                }).toList(),
+                if (_additionalAmountNeeded > 0)
+                  Card(
+                    color: Colors.blue[50],
+                    margin: const EdgeInsets.symmetric(vertical: 10),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Рекомендация:',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Для более равномерного распределения добавьте ${_additionalAmountNeeded.toStringAsFixed(2)} руб. к общему объему инвестиций.',
+                            style: const TextStyle(
+                              color: Colors.blue,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          ...recommendedAllocation.keys.map((ticker) {
+                            final name = _stockInfo[ticker]!['name'];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Text(
+                                '$name: +${recommendedAllocation[ticker]!.toStringAsFixed(2)} руб.',
+                                style: TextStyle(color: Colors.blue[800]),
+                              ),
+                            );
+                          }).toList(),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+              if (stockLots.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 20),
                   child: ElevatedButton(
@@ -393,14 +469,5 @@ class _InvestmentCalculatorScreenState
         ),
       ),
     );
-  }
-
-  String? _getTickerFromKey(String key) {
-    for (final entry in _tickerNames.entries) {
-      if (key.contains(entry.value)) {
-        return entry.key;
-      }
-    }
-    return null;
   }
 }
