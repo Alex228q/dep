@@ -54,9 +54,9 @@ class _InvestmentCalculatorScreenState
 
   // Основное распределение
   Map<String, double> allocationResults = {
-    'Акции (60%)': 0,
+    'Акции (50%)': 0,
     'Облигации (30%)': 0,
-    'Золото (10%)': 0,
+    'Золото (20%)': 0,
   };
 
   // Распределение внутри акционной части
@@ -138,7 +138,7 @@ class _InvestmentCalculatorScreenState
 
     for (double delta = -maxDelta; delta <= maxDelta; delta += step) {
       double testAmount = totalAmount + delta;
-      double stocksPart = testAmount * 0.60;
+      double stocksPart = testAmount * 0.50; // 50% на акции
 
       double totalDeviation = 0;
       bool validLots = true;
@@ -184,13 +184,13 @@ class _InvestmentCalculatorScreenState
     _autoAdjusted = (optimizedAmount - totalAmount).abs() >= 1.0;
     totalAmount = optimizedAmount;
 
-    double stocksTotal = totalAmount * 0.60;
+    double stocksTotal = totalAmount * 0.50; // 50% на акции
 
     setState(() {
       allocationResults = {
-        'Акции (60%)': stocksTotal,
+        'Акции (50%)': stocksTotal,
         'Облигации (30%)': totalAmount * 0.30,
-        'Золото (10%)': totalAmount * 0.10,
+        'Золото (20%)': totalAmount * 0.20, // 20% на золото
       };
 
       stockLots.clear();
@@ -298,7 +298,7 @@ class _InvestmentCalculatorScreenState
                 final price = stockPrices[ticker] ?? 0;
                 final cost = lots * lotSize * price;
 
-                final double stocksTotal = allocationResults['Акции (60%)']!;
+                final double stocksTotal = allocationResults['Акции (50%)']!;
                 final double idealPercentage =
                     stocksDistribution[ticker]! * 100;
                 final double actualPercentage = (cost / stocksTotal) * 100;
