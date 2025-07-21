@@ -37,6 +37,7 @@ class _InvestmentCalculatorScreenState
   String? _error;
   double _adjustedTotalAmount = 0;
   bool _autoAdjusted = false;
+  double _totalStocksCost = 0; // Добавлено: общая сумма на акции
 
   // Цены акций и размер лота
   final Map<String, Map<String, dynamic>> _stockInfo = {
@@ -131,14 +132,14 @@ class _InvestmentCalculatorScreenState
   }
 
   double _findOptimalAmount(double totalAmount) {
-    double step = 100; // шаг подбора
-    double maxDelta = totalAmount * 0.10; // диапазон +/-10%
+    double step = 100;
+    double maxDelta = totalAmount * 0.10;
     double bestAmount = totalAmount;
     double minDeviation = double.infinity;
 
     for (double delta = -maxDelta; delta <= maxDelta; delta += step) {
       double testAmount = totalAmount + delta;
-      double stocksPart = testAmount * 0.50; // 50% на акции
+      double stocksPart = testAmount * 0.50;
 
       double totalDeviation = 0;
       bool validLots = true;
@@ -184,17 +185,18 @@ class _InvestmentCalculatorScreenState
     _autoAdjusted = (optimizedAmount - totalAmount).abs() >= 1.0;
     totalAmount = optimizedAmount;
 
-    double stocksTotal = totalAmount * 0.50; // 50% на акции
+    double stocksTotal = totalAmount * 0.50;
 
     setState(() {
       allocationResults = {
         'Акции (50%)': stocksTotal,
         'Облигации (30%)': totalAmount * 0.30,
-        'Золото (20%)': totalAmount * 0.20, // 20% на золото
+        'Золото (20%)': totalAmount * 0.20,
       };
 
       stockLots.clear();
       actualAllocation.clear();
+      _totalStocksCost = 0; // Сбрасываем сумму перед пересчётом
     });
 
     for (final ticker in stocksDistribution.keys) {
@@ -212,6 +214,7 @@ class _InvestmentCalculatorScreenState
 
       stockLots[ticker] = lots;
       actualAllocation[ticker] = actualAmount;
+      _totalStocksCost += actualAmount; // Суммируем стоимость акций
     }
 
     setState(() {});
@@ -285,6 +288,25 @@ class _InvestmentCalculatorScreenState
                   ),
                 ),
               ),
+              // Добавлен блок с общей суммой на акции
+              if (_totalStocksCost > 0)
+                Card(
+                  margin: const EdgeInsets.symmetric(vertical: 10),
+                  color: Colors.blue.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      'Общая сумма на акции: ${_totalStocksCost.toStringAsFixed(2)} руб. '
+                      '(${(_totalStocksCost / _adjustedTotalAmount * 100).toStringAsFixed(1)}% от общей суммы)',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 20),
               const Text(
                 'Распределение по акциям:',
